@@ -1,0 +1,12 @@
+[package]
+authors = ["Elliott Linder <elliott@linder.bz>"]
+name = "muonline-packet_codec"
+version = "0.1.0"
+
+[dependencies]
+bytes = "0.4"
+log = "0.4"
+tokio-io = "0.1"
+
+[dependencies.muonline-packet]
+path = "../muonline-packet"
