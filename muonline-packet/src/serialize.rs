@@ -16,6 +16,13 @@ pub trait PacketType {
 
   /// Returns any potential subcodes of the message.
   fn subcodes() -> &'static [u8];
+  
+  /// Returns the unique identifier of the message.
+  fn identifier() -> Vec<u8> {
+    let mut id = vec![Self::CODE];
+    id.extend_from_slice(Self::subcodes());
+    id
+  }
 }
 
 /// A trait for encoding types to a packet.
