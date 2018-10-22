@@ -1,29 +1,57 @@
-#[macro_use]
-extern crate log;
-extern crate bytes;
-extern crate muonline_packet as mupack;
-extern crate tokio_io;
-
 use bytes::BytesMut;
-use mupack::Packet;
+use crate::{Packet, PacketCrypto};
+use log::trace;
 use std::{fmt, io};
 use tokio_io::codec::{Decoder, Encoder};
 
-/// A packet codec encryption state.
-#[derive(Debug)]
-pub struct State {
+/// A packet codec encryption state builder.
+pub struct PacketCodecStateBuilder {
   cipher: Option<&'static [u8]>,
-  crypto: Option<mupack::Crypto>,
+  crypto: Option<PacketCrypto>,
+}
+
+impl PacketCodecStateBuilder {
+  /// Constructs a packet codec state.
+  pub fn build(self) -> PacketCodecState {
+    PacketCodecState {
+      cipher: self.cipher,
+      crypto: self.crypto,
+      counter: 0,
+    }
+  }
+
+  /// Sets the packet codec cipher.
+  pub fn cipher(mut self, cipher: &'static [u8]) -> Self {
+    self.cipher = Some(cipher);
+    self
+  }
+
+  /// Sets the packet codec encryption.
+  pub fn crypto(mut self, crypto: PacketCrypto) -> Self {
+    self.crypto = Some(crypto);
+    self
+  }
+}
+
+/// A packet codec encryption state.
+#[derive(Debug, Default)]
+pub struct PacketCodecState {
+  cipher: Option<&'static [u8]>,
+  crypto: Option<PacketCrypto>,
   counter: u8,
 }
 
-impl State {
-  /// Creates a new packet codec state.
-  pub fn new(cipher: Option<&'static [u8]>, crypto: Option<mupack::Crypto>) -> Self {
-    State {
-      crypto,
-      cipher,
-      counter: 0,
+impl PacketCodecState {
+  /// Creates a default packet codec state.
+  pub fn new() -> Self {
+    Self::builder().build()
+  }
+
+  /// Returns a packet codec state builder.
+  pub fn builder() -> PacketCodecStateBuilder {
+    PacketCodecStateBuilder {
+      cipher: None,
+      crypto: None,
     }
   }
 }
@@ -31,13 +59,33 @@ impl State {
 /// A Mu Online packet codec.
 #[derive(Debug)]
 pub struct PacketCodec {
-  encrypt: State,
-  decrypt: State,
+  encrypt: PacketCodecState,
+  decrypt: PacketCodecState,
+  max_size: Option<usize>,
 }
 
 impl PacketCodec {
   /// Creates a new packet codec.
-  pub fn new(encrypt: State, decrypt: State) -> Self { PacketCodec { encrypt, decrypt } }
+  pub fn new(encrypt: PacketCodecState, decrypt: PacketCodecState) -> Self {
+    PacketCodec {
+      encrypt,
+      decrypt,
+      max_size: None,
+    }
+  }
+
+  /// Creates a new packet codec with a size limit.
+  pub fn with_max_size(
+    encrypt: PacketCodecState,
+    decrypt: PacketCodecState,
+    max_size: usize,
+  ) -> Self {
+    PacketCodec {
+      encrypt,
+      decrypt,
+      max_size: Some(max_size),
+    }
+  }
 }
 
 impl Encoder for PacketCodec {
@@ -73,6 +121,16 @@ impl Decoder for PacketCodec {
       return Ok(None);
     }
 
+    if self
+      .max_size
+      .map_or(false, |max_size| input.len() > max_size)
+    {
+      return Err(io::Error::new(
+        io::ErrorKind::Other,
+        "max packet size exceeded",
+      ));
+    }
+
     Packet::from_bytes_ex(&input, self.decrypt.cipher, self.decrypt.crypto.as_ref())
       .and_then(|(packet, bytes_read, decrypt_counter)| {
         trace!("<codec> received: {:x}", ByteHex(&packet.to_bytes()));
@@ -95,8 +153,7 @@ impl Decoder for PacketCodec {
         }
 
         Ok(Some(packet))
-      })
-      .or_else(|error| {
+      }).or_else(|error| {
         // TODO: Do the bytes received so far need to be consumed?
         // In case data is missing, wait for more
         if error.kind() == io::ErrorKind::UnexpectedEof {

@@ -1,10 +1,10 @@
 [package]
 authors = ["Elliott Linder <elliott.darfink@gmail.com>"]
-name = "muonline-packet_derive"
+name = "packet-derive"
 version = "0.1.0"
 
 [dependencies]
-syn = { version = "0.15", features = ["full"] }
+syn = "0.15"
 quote = "0.6"
 
 [dev-dependencies.muonline-packet]

@@ -42,46 +42,48 @@ impl PacketKind {
   }
 
   /// Returns the maximum size for the kind.
-  pub fn max_size(&self) -> usize {
-    match *self {
+  pub fn max_size(self) -> usize {
+    match self {
       PacketKind::C1 | PacketKind::C3 => u8::max_value() as usize,
       PacketKind::C2 | PacketKind::C4 => u16::max_value() as usize,
     }
   }
 
   /// Returns the number of bytes used for representing the size.
-  pub fn bytes(&self) -> usize {
-    match *self {
+  pub fn bytes(self) -> usize {
+    match self {
       PacketKind::C1 | PacketKind::C3 => mem::size_of::<u8>(),
       PacketKind::C2 | PacketKind::C4 => mem::size_of::<u16>(),
     }
   }
 
   /// Returns the encrypted variant of the type.
-  pub fn encrypted(&self) -> PacketKind {
-    match *self {
+  pub fn encrypted(self) -> PacketKind {
+    match self {
       PacketKind::C1 => PacketKind::C3,
       PacketKind::C2 => PacketKind::C4,
-      _ => *self,
+      _ => self,
     }
   }
 
   /// Returns the decrypted variant of the type.
-  pub fn decrypted(&self) -> PacketKind {
-    match *self {
+  pub fn decrypted(self) -> PacketKind {
+    match self {
       PacketKind::C3 => PacketKind::C1,
       PacketKind::C4 => PacketKind::C2,
-      _ => *self,
+      _ => self,
     }
   }
 
   /// Returns the kind's header data offset.
-  pub fn offset(&self) -> usize {
+  pub fn offset(self) -> usize {
     // The encrypted version lacks the protocol byte
     let offset = if self.is_encrypted() { 1 } else { 2 };
     self.bytes() + offset
   }
 
   /// Returns whether this is an encrypted kind or not.
-  pub fn is_encrypted(&self) -> bool { *self == PacketKind::C3 || *self == PacketKind::C4 }
+  pub fn is_encrypted(self) -> bool {
+    self == PacketKind::C3 || self == PacketKind::C4
+  }
 }

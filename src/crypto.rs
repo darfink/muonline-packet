@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use std::cmp::Ordering;
 use std::io;
 
@@ -14,17 +15,17 @@ const DECRYPT_MOD: usize = 8;
 const ENCRYPT_MOD: usize = 11;
 
 /// Cipher used for the default encryption keys.
-const XOR_CIPHER: [u32; 4] = [0x3F08A79B, 0xE25CC287, 0x93D27AB9, 0x20DEA7BF];
+const XOR_CIPHER: [u32; 4] = [0x3F08_A79B, 0xE25C_C287, 0x93D2_7AB9, 0x20DE_A7BF];
 
 lazy_static! {
     /// Default client encryption scheme.
-    pub static ref CLIENT: Crypto = Crypto::new(
+    pub static ref CLIENT: PacketCrypto = PacketCrypto::new(
         include_bytes!("../res/Enc1.dat"),
         include_bytes!("../res/Dec1.dat"),
         &XOR_CIPHER);
 
     /// Default server encryption scheme.
-    pub static ref SERVER: Crypto = Crypto::new(
+    pub static ref SERVER: PacketCrypto = PacketCrypto::new(
         include_bytes!("../res/Enc2.dat"),
         include_bytes!("../res/Dec2.dat"),
         &XOR_CIPHER);
@@ -32,15 +33,15 @@ lazy_static! {
 
 /// An implementation of Mu Online's symmetric-key algorithm.
 #[derive(Debug, Clone)]
-pub struct Crypto {
+pub struct PacketCrypto {
   encrypt: Vec<u32>,
   decrypt: Vec<u32>,
 }
 
-impl Crypto {
+impl PacketCrypto {
   /// Creates a new encryption scheme.
   pub fn new(enc: &[u8; ENCRYPTION_SIZE], dec: &[u8; ENCRYPTION_SIZE], xor: &[u32; 4]) -> Self {
-    Crypto {
+    PacketCrypto {
       encrypt: Self::load_keys(enc, xor, [true, true, false, true]),
       decrypt: Self::load_keys(dec, xor, [true, false, true, true]),
     }
@@ -84,15 +85,14 @@ impl Crypto {
 
     let mut enc = (0..4)
       .map(|index| {
-        let mut data = reader.read_u16::<LittleEndian>().unwrap() as u32;
+        let mut data = u32::from(reader.read_u16::<LittleEndian>().unwrap());
         data ^= self.encrypt[12 + index] ^ crypt;
         data *= self.encrypt[4 + index];
         data %= self.encrypt[index];
 
         crypt = data & 0xFFFF;
         data
-      })
-      .collect::<SmallVec<[u32; 4]>>();
+      }).collect::<SmallVec<[u32; 4]>>();
 
     for index in 0..3 {
       enc[index] ^= self.encrypt[12 + index] ^ (enc[index + 1] & 0xFFFF);
@@ -124,8 +124,7 @@ impl Crypto {
         Self::hash_buffer(&mut data, 22, slice, offset, 2);
         offset += 2;
         LittleEndian::read_u32(&data)
-      })
-      .collect::<SmallVec<[u32; 4]>>();
+      }).collect::<SmallVec<[u32; 4]>>();
 
     for index in (0..3).rev() {
       dec[index] ^= self.decrypt[12 + index] ^ (dec[index + 1] & 0xFFFF);
@@ -133,12 +132,12 @@ impl Crypto {
 
     let mut writer = io::Cursor::new(out);
     let mut crypt = 0;
-    for index in 0..4 {
-      let mut original = self.decrypt[8 + index] * dec[index];
+    for (index, dec) in dec.iter().enumerate().take(4) {
+      let mut original = self.decrypt[8 + index] * dec;
       original %= self.decrypt[index];
       original ^= self.decrypt[index + 12] ^ crypt;
 
-      crypt = dec[index] & 0xFFFF;
+      crypt = dec & 0xFFFF;
       writer.write_u16::<LittleEndian>(original as u16).unwrap();
     }
 
@@ -162,18 +161,18 @@ impl Crypto {
   }
 
   /// Decrypts and loads encryption keys from a byte buffer.
-  fn load_keys(keys: &[u8], xor: &[u32], flags: [bool; 4]) -> Vec<u32> {
+  fn load_keys(keys: &[u8; ENCRYPTION_SIZE], xor: &[u32; 4], flags: [bool; 4]) -> Vec<u32> {
     let mut result = Vec::new();
-    let mut reader = io::Cursor::new(keys);
+    let mut reader = io::Cursor::new(&keys[..]);
     reader.set_position(6);
 
     for flag in &flags {
-      for i in 0..4 {
-        if *flag {
-          result.push(reader.read_u32::<LittleEndian>().unwrap() ^ xor[i]);
+      for xor in xor.iter() {
+        result.push(if *flag {
+          reader.read_u32::<LittleEndian>().unwrap() ^ xor
         } else {
-          result.push(0);
-        }
+          0
+        });
       }
     }
 
@@ -225,7 +224,7 @@ impl Crypto {
           }
         }
         out[0] >>= delta;
-      },
+      }
       Ordering::Less => {
         let delta = delta.abs();
         if size > 1 {
@@ -234,7 +233,7 @@ impl Crypto {
           }
         }
         out[size - 1] <<= delta;
-      },
+      }
     }
   }
 
@@ -246,7 +245,9 @@ impl Crypto {
   }
 
   /// Rounds a value up to a specific alignment.
-  fn align(value: usize, alignment: usize) -> usize { (value + alignment - 1) / alignment }
+  fn align(value: usize, alignment: usize) -> usize {
+    (value + alignment - 1) / alignment
+  }
 }
 
 #[cfg(test)]
@@ -259,9 +260,7 @@ mod tests {
     let enc = CLIENT.encrypt(&raw);
     assert_eq!(
       enc,
-      [
-        0xE3, 0xB3, 0x53, 0x9A, 0x4F, 0xC8, 0x32, 0x7D, 0x04, 0x37, 0x0F
-      ]
+      [0xE3, 0xB3, 0x53, 0x9A, 0x4F, 0xC8, 0x32, 0x7D, 0x04, 0x37, 0x0F]
     );
 
     let dec = CLIENT.decrypt(&enc).unwrap();
@@ -274,9 +273,7 @@ mod tests {
     let enc = SERVER.encrypt(&raw);
     assert_eq!(
       enc,
-      [
-        0x47, 0x93, 0x15, 0x3B, 0x0B, 0x1C, 0x15, 0x7C, 0x16, 0x37, 0x0F
-      ]
+      [0x47, 0x93, 0x15, 0x3B, 0x0B, 0x1C, 0x15, 0x7C, 0x16, 0x37, 0x0F]
     );
 
     let dec = SERVER.decrypt(&enc).unwrap();
