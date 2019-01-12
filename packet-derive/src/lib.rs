@@ -13,7 +13,7 @@ struct PacketHeader {
   subcode: Vec<u8>,
 }
 
-#[proc_macro_derive(MuPacket, attributes(packet))]
+#[proc_macro_derive(Packet, attributes(packet))]
 pub fn mu_packet(input: TokenStream) -> TokenStream {
   let ast = parse_macro_input!(input as DeriveInput);
 
@@ -39,18 +39,18 @@ fn get_packet_header(ast: &syn::DeriveInput) -> PacketHeader {
       }
       None
     }).next()
-    .expect("#[derive(MuPacket)] requires a 'packet' list attribute");
+    .expect("#[derive(Packet)] requires a 'packet' list attribute");
 
   let kind = items
     .iter()
     .filter_map(|item| get_key_value("kind", item))
     .next()
-    .expect("#[derive(MuPacket)] attribute field 'kind' not valid");
+    .expect("#[derive(Packet)] attribute field 'kind' not valid");
   let code = items
     .iter()
     .filter_map(|item| get_key_value("code", item))
     .next()
-    .expect("#[derive(MuPacket)] attribute field 'code' not valid");
+    .expect("#[derive(Packet)] attribute field 'code' not valid");
   let subcode = items
     .iter()
     .filter_map(|item| get_key_value("subcode", item))
@@ -59,14 +59,14 @@ fn get_packet_header(ast: &syn::DeriveInput) -> PacketHeader {
   PacketHeader {
     kind,
     code: u8::from_str_radix(&code, 16)
-      .expect("#[derive(MuPacket)] attribute field 'code' must be a hexadecimal."),
+      .expect("#[derive(Packet)] attribute field 'code' must be a hexadecimal."),
     subcode: subcode
       .map(|codes| {
         codes
           .split("|")
           .map(|code| {
             u8::from_str_radix(&code, 16).expect(
-              "#[derive(MuPacket)] attribute field 'subcode' must be pipe-separated hex values.",
+              "#[derive(Packet)] attribute field 'subcode' must be pipe-separated hex values.",
             )
           }).collect()
       }).unwrap_or_else(Vec::new),
